@@ -963,425 +963,494 @@ local shadowBack1 = CreateShadowLayer(windowRoot, 34, 0.80, 6, 9)
 		end
 
 		function Elements:Dropdown(text, options, default, callback)
-			text = text or "Dropdown"
-			options = options or {}
-
-			--// Supported:
-			--// Dropdown("Mode", {"A", "B"}, "A", callback)
-			--// Dropdown("Modes", {"A", "B"}, {"A"}, callback)
-			--// Dropdown("Modes", {
-			--//     Options = {"A", "B", "C"},
-			--//     Default = {"A", "C"},
-			--//     Multi = true,
-			--//     Callback = function(selected) end
-			--// })
-
-			local multiSelect = false
-
-			if typeof(options) == "table" and options.Options then
-				local dropConfig = options
-
-				options = dropConfig.Options or {}
-				default = dropConfig.Default
-				callback = dropConfig.Callback
-				multiSelect = dropConfig.Multi == true
-			else
-				multiSelect = typeof(default) == "table"
-
-				if typeof(default) == "function" then
-					callback = default
-					default = nil
-					multiSelect = false
-				end
-			end
-
-			local opened = false
-			local optionButtons = {}
-			local selected
-
-			if multiSelect then
-				selected = {}
-
-				if typeof(default) == "table" then
-					for _, value in ipairs(default) do
-						selected[value] = true
-					end
-				end
-			else
-				selected = default or options[1] or "None"
-			end
-
-			local dropdown = BaseElement("TextButton", 32)
-			dropdown.ClipsDescendants = true
-
-			Create("TextLabel", {
-				Name = "text",
-				Font = Enum.Font.Gotham,
-				Text = tostring(text),
-				TextColor3 = Theme.Text,
-				TextSize = 13,
-				TextXAlignment = Enum.TextXAlignment.Left,
-				TextYAlignment = Enum.TextYAlignment.Center,
-				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(10, 0),
-				Size = UDim2.new(1, -170, 0, 32),
-				ZIndex = 16,
-				Parent = dropdown,
-			})
-
-			local selectedLabel = Create("TextLabel", {
-				Name = "selected",
-				Font = Enum.Font.Gotham,
-				Text = "",
-				TextColor3 = Theme.SubText,
-				TextSize = 12,
-				TextXAlignment = Enum.TextXAlignment.Right,
-				TextYAlignment = Enum.TextYAlignment.Center,
-				TextTruncate = Enum.TextTruncate.AtEnd,
-				BackgroundTransparency = 1,
-				Position = UDim2.new(1, -165, 0, 0),
-				Size = UDim2.fromOffset(130, 32),
-				ZIndex = 16,
-				Parent = dropdown,
-			})
-
-			local arrow = Create("TextLabel", {
-				Name = "arrow",
-				Font = Enum.Font.GothamBold,
-				Text = "⌄",
-				TextColor3 = Theme.SubText,
-				TextSize = 16,
-				TextXAlignment = Enum.TextXAlignment.Center,
-				TextYAlignment = Enum.TextYAlignment.Center,
-				BackgroundTransparency = 1,
-				Position = UDim2.new(1, -30, 0, 0),
-				Size = UDim2.fromOffset(20, 32),
-				ZIndex = 16,
-				Parent = dropdown,
-			})
-
-			local optionHolder = Create("Frame", {
-				Name = "optionHolder",
-				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(7, 34),
-				Size = UDim2.new(1, -14, 0, 0),
-				ZIndex = 17,
-				Parent = dropdown,
-			}, {
-				Create("UIListLayout", {
-					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0, 4),
-				})
-			})
-
-			local function OptionExists(option)
-				for _, existing in ipairs(options) do
-					if existing == option then
-						return true
-					end
-				end
-
-				return false
-			end
-
-			local function GetSelectedArray()
-				local list = {}
-
-				for _, option in ipairs(options) do
-					if selected[option] then
-						table.insert(list, option)
-					end
-				end
-
-				return list
-			end
-
-			local function UpdateSelectedLabel()
-				if multiSelect then
-					local list = GetSelectedArray()
-
-					if #list == 0 then
-						selectedLabel.Text = "None"
-					elseif #list == 1 then
-						selectedLabel.Text = tostring(list[1])
-					else
-						selectedLabel.Text = tostring(#list) .. " selected"
-					end
-				else
-					selectedLabel.Text = tostring(selected)
-				end
-			end
-
-			local function GetOpenHeight()
-				local count = #optionButtons
-				local optionHeight = count * 26
-				local paddingHeight = math.max(count - 1, 0) * 4
-
-				return 38 + optionHeight + paddingHeight
-			end
-
-			local function SetOpen(state)
-				opened = state == true
-
-				Tween(dropdown, 0.18, {
-					Size = opened and UDim2.new(1, -14, 0, GetOpenHeight()) or UDim2.new(1, -14, 0, 32)
-				})
-
-				Tween(arrow, 0.18, {
-					Rotation = opened and 180 or 0
-				})
-			end
-
-			local function FireCallback()
-				if multiSelect then
-					SafeCallback(callback, GetSelectedArray())
-				else
-					SafeCallback(callback, selected)
-				end
-			end
-
-			local function UpdateOptionVisual(optionButton, option)
-				local check = optionButton:FindFirstChild("check")
-				local optionText = optionButton:FindFirstChild("text")
-
-				local isSelected
-
-				if multiSelect then
-					isSelected = selected[option] == true
-				else
-					isSelected = selected == option
-				end
-
-				if check then
-					check.Visible = isSelected
-				end
-
-				if optionText then
-					optionText.TextColor3 = isSelected and Theme.Text or Theme.SubText
-				end
-
-				Tween(optionButton, 0.14, {
-					BackgroundColor3 = isSelected and Color3.fromRGB(42, 42, 42) or Color3.fromRGB(34, 34, 34)
-				})
-			end
-
-			local function RefreshVisuals()
-				for _, data in ipairs(optionButtons) do
-					UpdateOptionVisual(data.Button, data.Option)
-				end
-
-				UpdateSelectedLabel()
-			end
-
-			local function SetSelected(value, fireCallback)
-				if multiSelect then
-					if typeof(value) == "table" then
-						table.clear(selected)
-
-						for _, item in ipairs(value) do
-							if OptionExists(item) then
-								selected[item] = true
-							end
-						end
-					else
-						if OptionExists(value) then
-							selected[value] = not selected[value]
-						end
-					end
-				else
-					if OptionExists(value) then
-						selected = value
-					else
-						selected = options[1] or "None"
-					end
-
-					SetOpen(false)
-				end
-
-				RefreshVisuals()
-
-				if fireCallback then
-					FireCallback()
-				end
-			end
-
-			local function ClearOptions()
-				for _, data in ipairs(optionButtons) do
-					data.Button:Destroy()
-				end
-
-				table.clear(optionButtons)
-			end
-
-			local function AddOption(option)
-				local optionButton = Create("TextButton", {
-					Name = tostring(option),
-					BackgroundColor3 = Color3.fromRGB(34, 34, 34),
-					Text = "",
-					AutoButtonColor = false,
-					Size = UDim2.new(1, 0, 0, 26),
-					ZIndex = 18,
-					Parent = optionHolder,
-				}, {
-					Corner(5),
-				})
-
-				Create("TextLabel", {
-					Name = "check",
-					Font = Enum.Font.GothamBold,
-					Text = "✓",
-					TextColor3 = Theme.Accent,
-					TextSize = 13,
-					TextXAlignment = Enum.TextXAlignment.Center,
-					TextYAlignment = Enum.TextYAlignment.Center,
-					BackgroundTransparency = 1,
-					Position = UDim2.fromOffset(6, 0),
-					Size = UDim2.fromOffset(18, 26),
-					Visible = false,
-					ZIndex = 19,
-					Parent = optionButton,
-				})
-
-				Create("TextLabel", {
-					Name = "text",
-					Font = Enum.Font.Gotham,
-					Text = tostring(option),
-					TextColor3 = Theme.SubText,
-					TextSize = 12,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextYAlignment = Enum.TextYAlignment.Center,
-					BackgroundTransparency = 1,
-					Position = UDim2.fromOffset(28, 0),
-					Size = UDim2.new(1, -36, 1, 0),
-					ZIndex = 19,
-					Parent = optionButton,
-				})
-
-				optionButton.MouseEnter:Connect(function()
-					Tween(optionButton, 0.14, {
-						BackgroundColor3 = Theme.ElementHover
-					})
-				end)
-
-				optionButton.MouseLeave:Connect(function()
-					UpdateOptionVisual(optionButton, option)
-				end)
-
-				optionButton.MouseButton1Click:Connect(function()
-					SetSelected(option, true)
-				end)
-
-				table.insert(optionButtons, {
-					Button = optionButton,
-					Option = option,
-				})
-
-				UpdateOptionVisual(optionButton, option)
-			end
-
-			local function UpdateList(newOptions, newDefault)
-				options = newOptions or {}
-
-				ClearOptions()
-
-				if multiSelect then
-					local oldSelected = selected
-					selected = {}
-
-					if typeof(newDefault) == "table" then
-						for _, item in ipairs(newDefault) do
-							if OptionExists(item) then
-								selected[item] = true
-							end
-						end
-					else
-						for _, option in ipairs(options) do
-							if oldSelected[option] then
-								selected[option] = true
-							end
-						end
-					end
-				else
-					if newDefault ~= nil and OptionExists(newDefault) then
-						selected = newDefault
-					elseif OptionExists(selected) then
-						selected = selected
-					else
-						selected = options[1] or "None"
-					end
-				end
-
-				for _, option in ipairs(options) do
-					AddOption(option)
-				end
-
-				RefreshVisuals()
-				SetOpen(false)
-			end
-
-			for _, option in ipairs(options) do
-				AddOption(option)
-			end
-
-			dropdown.MouseEnter:Connect(function()
-				Tween(dropdown, 0.18, {
-					BackgroundColor3 = Theme.ElementHover
-				})
-			end)
-
-			dropdown.MouseLeave:Connect(function()
-				Tween(dropdown, 0.18, {
-					BackgroundColor3 = Theme.Element
-				})
-			end)
-
-			dropdown.InputBegan:Connect(function(input)
-				if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-					return
-				end
-
-				local mouseY = UserInputService:GetMouseLocation().Y
-				local relativeY = mouseY - dropdown.AbsolutePosition.Y
-
-				if relativeY <= 32 then
-					SetOpen(not opened)
-				end
-			end)
-
-			RefreshVisuals()
-
-			return {
-				Instance = dropdown,
-
-				Set = function(_, value)
-					SetSelected(value, true)
-				end,
-
-				Get = function()
-					if multiSelect then
-						return GetSelectedArray()
-					end
-
-					return selected
-				end,
-
-				Open = function()
-					SetOpen(true)
-				end,
-
-				Close = function()
-					SetOpen(false)
-				end,
-
-				Refresh = function(_, newOptions, newDefault)
-					UpdateList(newOptions, newDefault)
-				end,
-
-				UpdateList = function(_, newOptions, newDefault)
-					UpdateList(newOptions, newDefault)
-				end,
-			}
+	text = text or "Dropdown"
+	options = options or {}
+
+	--// Supported:
+	--// Dropdown("Mode", {"A", "B"}, "A", callback)
+	--// Dropdown("Modes", {"A", "B"}, {"A"}, callback)
+	--// Dropdown("Targets", {
+	--//     Options = {"A", "B"},
+	--//     Default = {"A"},
+	--//     Multi = true,
+	--//     Callback = function(selected) end
+	--// })
+
+	local multiSelect = false
+
+	if typeof(options) == "table" and options.Options then
+		local dropConfig = options
+
+		options = dropConfig.Options or {}
+		default = dropConfig.Default
+		callback = dropConfig.Callback
+		multiSelect = dropConfig.Multi == true
+	else
+		multiSelect = typeof(default) == "table"
+
+		if typeof(default) == "function" then
+			callback = default
+			default = nil
+			multiSelect = false
 		end
+	end
+
+	local opened = false
+	local optionButtons = {}
+	local selected
+
+	if multiSelect then
+		selected = {}
+
+		if typeof(default) == "table" then
+			for _, value in ipairs(default) do
+				selected[value] = true
+			end
+		end
+	else
+		selected = default or options[1] or "None"
+	end
+
+	--// Different look from button/toggle.
+	local dropdown = Create("Frame", {
+		Name = "dropdown",
+		BackgroundColor3 = Color3.fromRGB(29, 29, 29),
+		Size = UDim2.new(1, -14, 0, 36),
+		ClipsDescendants = true,
+		ZIndex = 15,
+		Parent = holder,
+	}, {
+		Corner(7),
+		Stroke(Color3.fromRGB(52, 52, 52), 1, 0.25),
+	})
+
+	local header = Create("TextButton", {
+		Name = "header",
+		BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+		Size = UDim2.new(1, 0, 0, 36),
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 16,
+		Parent = dropdown,
+	}, {
+		Corner(7),
+	})
+
+	Create("Frame", {
+		Name = "leftAccent",
+		BackgroundColor3 = Theme.Accent,
+		Position = UDim2.fromOffset(0, 8),
+		Size = UDim2.fromOffset(2, 20),
+		ZIndex = 17,
+		Parent = header,
+	}, {
+		Corner(2),
+	})
+
+	Create("TextLabel", {
+		Name = "text",
+		Font = Enum.Font.GothamMedium,
+		Text = tostring(text),
+		TextColor3 = Theme.Text,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(1, -190, 1, 0),
+		ZIndex = 17,
+		Parent = header,
+	})
+
+	local selectedBox = Create("Frame", {
+		Name = "selectedBox",
+		BackgroundColor3 = Color3.fromRGB(27, 27, 27),
+		Position = UDim2.new(1, -170, 0.5, -11),
+		Size = UDim2.fromOffset(135, 22),
+		ZIndex = 17,
+		Parent = header,
+	}, {
+		Corner(5),
+		Stroke(Color3.fromRGB(48, 48, 48), 1, 0.35),
+	})
+
+	local selectedLabel = Create("TextLabel", {
+		Name = "selected",
+		Font = Enum.Font.Gotham,
+		Text = "",
+		TextColor3 = Theme.SubText,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(6, 0),
+		Size = UDim2.new(1, -12, 1, 0),
+		ZIndex = 18,
+		Parent = selectedBox,
+	})
+
+	local arrow = Create("TextLabel", {
+		Name = "arrow",
+		Font = Enum.Font.GothamBold,
+		Text = "⌄",
+		TextColor3 = Theme.Accent,
+		TextSize = 16,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		BackgroundTransparency = 1,
+		Position = UDim2.new(1, -30, 0, 0),
+		Size = UDim2.fromOffset(24, 36),
+		ZIndex = 18,
+		Parent = header,
+	})
+
+	local optionHolder = Create("Frame", {
+		Name = "optionHolder",
+		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+		Position = UDim2.fromOffset(6, 42),
+		Size = UDim2.new(1, -12, 0, 0),
+		ZIndex = 16,
+		Parent = dropdown,
+	}, {
+		Corner(6),
+		Stroke(Color3.fromRGB(45, 45, 45), 1, 0.35),
+
+		Create("UIPadding", {
+			PaddingLeft = UDim.new(0, 5),
+			PaddingRight = UDim.new(0, 5),
+			PaddingTop = UDim.new(0, 5),
+			PaddingBottom = UDim.new(0, 5),
+		}),
+
+		Create("UIListLayout", {
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 4),
+		})
+	})
+
+	local function OptionExists(option)
+		for _, existing in ipairs(options) do
+			if existing == option then
+				return true
+			end
+		end
+
+		return false
+	end
+
+	local function GetSelectedArray()
+		local list = {}
+
+		for _, option in ipairs(options) do
+			if selected[option] then
+				table.insert(list, option)
+			end
+		end
+
+		return list
+	end
+
+	local function UpdateSelectedLabel()
+		if multiSelect then
+			local list = GetSelectedArray()
+
+			if #list == 0 then
+				selectedLabel.Text = "None"
+			elseif #list == 1 then
+				selectedLabel.Text = tostring(list[1])
+			else
+				selectedLabel.Text = tostring(#list) .. " selected"
+			end
+		else
+			selectedLabel.Text = tostring(selected)
+		end
+	end
+
+	local function FireCallback()
+		if multiSelect then
+			SafeCallback(callback, GetSelectedArray())
+		else
+			SafeCallback(callback, selected)
+		end
+	end
+
+	local function GetOpenHeight()
+		local count = #optionButtons
+
+		if count <= 0 then
+			return 72
+		end
+
+		local optionHeight = count * 28
+		local paddingHeight = math.max(count - 1, 0) * 4
+		local holderPadding = 10
+
+		return 42 + optionHeight + paddingHeight + holderPadding
+	end
+
+	local function UpdateHolderSize()
+		local count = #optionButtons
+		local optionHeight = count * 28
+		local paddingHeight = math.max(count - 1, 0) * 4
+		local holderPadding = 10
+
+		optionHolder.Size = UDim2.new(1, -12, 0, optionHeight + paddingHeight + holderPadding)
+	end
+
+	local function SetOpen(state)
+		opened = state == true
+
+		UpdateHolderSize()
+
+		Tween(dropdown, 0.18, {
+			Size = opened and UDim2.new(1, -14, 0, GetOpenHeight()) or UDim2.new(1, -14, 0, 36)
+		})
+
+		Tween(arrow, 0.18, {
+			Rotation = opened and 180 or 0
+		})
+
+		Tween(header, 0.18, {
+			BackgroundColor3 = opened and Color3.fromRGB(39, 39, 39) or Color3.fromRGB(35, 35, 35)
+		})
+	end
+
+	local function UpdateOptionVisual(optionButton, option)
+		local check = optionButton:FindFirstChild("check")
+		local optionText = optionButton:FindFirstChild("text")
+
+		local isSelected
+
+		if multiSelect then
+			isSelected = selected[option] == true
+		else
+			isSelected = selected == option
+		end
+
+		if check then
+			check.Visible = isSelected
+		end
+
+		if optionText then
+			optionText.TextColor3 = isSelected and Theme.Text or Theme.SubText
+		end
+
+		Tween(optionButton, 0.12, {
+			BackgroundColor3 = isSelected and Color3.fromRGB(38, 48, 41) or Color3.fromRGB(31, 31, 31)
+		})
+	end
+
+	local function RefreshVisuals()
+		for _, data in ipairs(optionButtons) do
+			UpdateOptionVisual(data.Button, data.Option)
+		end
+
+		UpdateSelectedLabel()
+	end
+
+	local function SetSelected(value, fireCallback)
+		if multiSelect then
+			if typeof(value) == "table" then
+				table.clear(selected)
+
+				for _, item in ipairs(value) do
+					if OptionExists(item) then
+						selected[item] = true
+					end
+				end
+			else
+				if OptionExists(value) then
+					selected[value] = not selected[value]
+				end
+			end
+		else
+			if OptionExists(value) then
+				selected = value
+			else
+				selected = options[1] or "None"
+			end
+
+			SetOpen(false)
+		end
+
+		RefreshVisuals()
+
+		if fireCallback then
+			FireCallback()
+		end
+	end
+
+	local function ClearOptions()
+		for _, data in ipairs(optionButtons) do
+			data.Button:Destroy()
+		end
+
+		table.clear(optionButtons)
+	end
+
+	local function AddOption(option)
+		local optionButton = Create("TextButton", {
+			Name = tostring(option),
+			BackgroundColor3 = Color3.fromRGB(31, 31, 31),
+			Text = "",
+			AutoButtonColor = false,
+			Size = UDim2.new(1, 0, 0, 28),
+			ZIndex = 18,
+			Parent = optionHolder,
+		}, {
+			Corner(5),
+		})
+
+		Create("TextLabel", {
+			Name = "check",
+			Font = Enum.Font.GothamBold,
+			Text = "✓",
+			TextColor3 = Theme.Accent,
+			TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(5, 0),
+			Size = UDim2.fromOffset(20, 28),
+			Visible = false,
+			ZIndex = 19,
+			Parent = optionButton,
+		})
+
+		Create("TextLabel", {
+			Name = "text",
+			Font = Enum.Font.Gotham,
+			Text = tostring(option),
+			TextColor3 = Theme.SubText,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(30, 0),
+			Size = UDim2.new(1, -38, 1, 0),
+			ZIndex = 19,
+			Parent = optionButton,
+		})
+
+		optionButton.MouseEnter:Connect(function()
+			Tween(optionButton, 0.12, {
+				BackgroundColor3 = Theme.ElementHover
+			})
+		end)
+
+		optionButton.MouseLeave:Connect(function()
+			UpdateOptionVisual(optionButton, option)
+		end)
+
+		optionButton.MouseButton1Click:Connect(function()
+			SetSelected(option, true)
+		end)
+
+		table.insert(optionButtons, {
+			Button = optionButton,
+			Option = option,
+		})
+
+		UpdateOptionVisual(optionButton, option)
+	end
+
+	local function UpdateList(newOptions, newDefault)
+		options = newOptions or {}
+
+		ClearOptions()
+
+		if multiSelect then
+			local oldSelected = selected
+			selected = {}
+
+			if typeof(newDefault) == "table" then
+				for _, item in ipairs(newDefault) do
+					if OptionExists(item) then
+						selected[item] = true
+					end
+				end
+			else
+				for _, option in ipairs(options) do
+					if oldSelected[option] then
+						selected[option] = true
+					end
+				end
+			end
+		else
+			if newDefault ~= nil and OptionExists(newDefault) then
+				selected = newDefault
+			elseif OptionExists(selected) then
+				selected = selected
+			else
+				selected = options[1] or "None"
+			end
+		end
+
+		for _, option in ipairs(options) do
+			AddOption(option)
+		end
+
+		UpdateHolderSize()
+		RefreshVisuals()
+		SetOpen(false)
+	end
+
+	for _, option in ipairs(options) do
+		AddOption(option)
+	end
+
+	header.MouseEnter:Connect(function()
+		Tween(header, 0.14, {
+			BackgroundColor3 = Color3.fromRGB(42, 42, 42)
+		})
+	end)
+
+	header.MouseLeave:Connect(function()
+		Tween(header, 0.14, {
+			BackgroundColor3 = opened and Color3.fromRGB(39, 39, 39) or Color3.fromRGB(35, 35, 35)
+		})
+	end)
+
+	header.MouseButton1Click:Connect(function()
+		SetOpen(not opened)
+	end)
+
+	UpdateHolderSize()
+	RefreshVisuals()
+
+	return {
+		Instance = dropdown,
+
+		Set = function(_, value)
+			SetSelected(value, true)
+		end,
+
+		Get = function()
+			if multiSelect then
+				return GetSelectedArray()
+			end
+
+			return selected
+		end,
+
+		Open = function()
+			SetOpen(true)
+		end,
+
+		Close = function()
+			SetOpen(false)
+		end,
+
+		Refresh = function(_, newOptions, newDefault)
+			UpdateList(newOptions, newDefault)
+		end,
+
+		UpdateList = function(_, newOptions, newDefault)
+			UpdateList(newOptions, newDefault)
+		end,
+	}
+end
 
 		return Elements
 	end
