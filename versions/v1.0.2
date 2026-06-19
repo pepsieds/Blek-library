@@ -155,20 +155,25 @@ function Library:Create(config)
 		Parent = dark_UI,
 	})
 
-	local shadow = Create("ImageLabel", {
-		Name = "shadow",
-		Image = "rbxassetid://1316045217",
-		ImageColor3 = Color3.fromRGB(0, 0, 0),
-		ImageTransparency = 0.42,
-		ScaleType = Enum.ScaleType.Slice,
-		SliceCenter = Rect.new(10, 10, 118, 118),
-		BackgroundTransparency = 1,
+	local function CreateShadowLayer(parent, sizeOffset, transparency, yOffset, zIndex)
+	return Create("Frame", {
+		Name = "ShadowLayer",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.5, 8),
-		Size = UDim2.new(1, 70, 1, 70),
-		ZIndex = 9,
-		Parent = windowRoot,
+		Position = UDim2.new(0.5, 0, 0.5, yOffset or 0),
+		Size = UDim2.new(1, sizeOffset, 1, sizeOffset),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = transparency,
+		BorderSizePixel = 0,
+		ZIndex = zIndex,
+		Parent = parent,
+	}, {
+		Corner(10),
 	})
+end
+
+local shadowBack3 = CreateShadowLayer(windowRoot, 90, 0.90, 12, 7)
+local shadowBack2 = CreateShadowLayer(windowRoot, 60, 0.86, 9, 8)
+local shadowBack1 = CreateShadowLayer(windowRoot, 34, 0.80, 6, 9)
 
 	local main = Create("Frame", {
 		Name = "main",
