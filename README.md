@@ -20,7 +20,7 @@ A lightweight, draggable Roblox UI library for building in-game menus with tabs,
 Load the library via `loadstring` or by requiring the module script directly:
 
 ```lua
-local Library = loadstring(game:HttpGet("YOUR_RAW_URL_HERE"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/pepsieds/Blek-library/refs/heads/main/versions/v1.0.0"))()
 ```
 
 Or if placed as a ModuleScript in your game:
