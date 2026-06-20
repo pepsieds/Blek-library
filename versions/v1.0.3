@@ -1,0 +1,1980 @@
+--// dark_UI Library Rewrite
+--// Added:
+--// - v1.0.0 back shadow
+--// - Toggle key button rebind
+--// - Dropdown:UpdateList(newTable, newDefault)
+--// - Dropdown Searchbar = true
+--// - Dropdown only closes when header/top button is clicked
+--// - Settings button
+--// - Themes: Dark, Light, Midnight
+--// - Accent color changer, default accent is white
+--// - Cleaner buttons
+
+local Library = {}
+
+--// Services
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local SoundService = game:GetService("SoundService")
+
+local LocalPlayer = Players.LocalPlayer
+
+--// Theme system
+local ThemePresets = {
+	Dark = {
+		Main = Color3.fromRGB(25, 25, 25),
+		Topbar = Color3.fromRGB(30, 30, 30),
+		Container = Color3.fromRGB(32, 32, 32),
+
+		Element = Color3.fromRGB(38, 38, 38),
+		ElementHover = Color3.fromRGB(44, 44, 44),
+		ElementDown = Color3.fromRGB(50, 50, 50),
+
+		Text = Color3.fromRGB(220, 220, 220),
+		SubText = Color3.fromRGB(150, 150, 150),
+
+		Stroke = Color3.fromRGB(55, 55, 55),
+		Scroll = Color3.fromRGB(80, 80, 80),
+	},
+
+	Light = {
+		Main = Color3.fromRGB(235, 235, 235),
+		Topbar = Color3.fromRGB(245, 245, 245),
+		Container = Color3.fromRGB(225, 225, 225),
+
+		Element = Color3.fromRGB(250, 250, 250),
+		ElementHover = Color3.fromRGB(238, 238, 238),
+		ElementDown = Color3.fromRGB(228, 228, 228),
+
+		Text = Color3.fromRGB(30, 30, 30),
+		SubText = Color3.fromRGB(95, 95, 95),
+
+		Stroke = Color3.fromRGB(205, 205, 205),
+		Scroll = Color3.fromRGB(150, 150, 150),
+	},
+
+	Midnight = {
+		Main = Color3.fromRGB(11, 13, 20),
+		Topbar = Color3.fromRGB(15, 18, 28),
+		Container = Color3.fromRGB(18, 21, 32),
+
+		Element = Color3.fromRGB(24, 28, 42),
+		ElementHover = Color3.fromRGB(31, 36, 54),
+		ElementDown = Color3.fromRGB(38, 44, 65),
+
+		Text = Color3.fromRGB(225, 230, 245),
+		SubText = Color3.fromRGB(140, 148, 170),
+
+		Stroke = Color3.fromRGB(45, 52, 72),
+		Scroll = Color3.fromRGB(75, 85, 110),
+	},
+}
+
+local function Darken(color, amount)
+	return Color3.new(
+		math.clamp(color.R * (1 - amount), 0, 1),
+		math.clamp(color.G * (1 - amount), 0, 1),
+		math.clamp(color.B * (1 - amount), 0, 1)
+	)
+end
+
+local function LerpColor(a, b, t)
+	return Color3.new(
+		a.R + (b.R - a.R) * t,
+		a.G + (b.G - a.G) * t,
+		a.B + (b.B - a.B) * t
+	)
+end
+
+local function CopyTheme(name)
+	local source = ThemePresets[name] or ThemePresets.Dark
+	local copy = {}
+
+	for key, value in pairs(source) do
+		copy[key] = value
+	end
+
+	return copy
+end
+
+local Theme = CopyTheme("Dark")
+Theme.Accent = Color3.fromRGB(255, 255, 255)
+Theme.AccentDark = Darken(Theme.Accent, 0.25)
+Theme.AccentSoft = LerpColor(Theme.Element, Theme.Accent, 0.16)
+
+local CurrentTheme = "Dark"
+local BoundObjects = {}
+
+local function Bind(object, property, themeKey)
+	table.insert(BoundObjects, {
+		Object = object,
+		Property = property,
+		ThemeKey = themeKey,
+	})
+
+	if Theme[themeKey] ~= nil then
+		object[property] = Theme[themeKey]
+	end
+
+	return object
+end
+
+local function ApplyTheme()
+	for i = #BoundObjects, 1, -1 do
+		local data = BoundObjects[i]
+
+		if not data.Object or not data.Object.Parent then
+			table.remove(BoundObjects, i)
+		elseif Theme[data.ThemeKey] ~= nil then
+			data.Object[data.Property] = Theme[data.ThemeKey]
+		end
+	end
+end
+
+local function SetTheme(themeName)
+	if not ThemePresets[themeName] then
+		return
+	end
+
+	local accent = Theme.Accent
+	CurrentTheme = themeName
+
+	local newTheme = CopyTheme(themeName)
+
+	for key, value in pairs(newTheme) do
+		Theme[key] = value
+	end
+
+	Theme.Accent = accent
+	Theme.AccentDark = Darken(accent, 0.25)
+	Theme.AccentSoft = LerpColor(Theme.Element, accent, 0.16)
+
+	ApplyTheme()
+end
+
+local function SetAccent(color)
+	Theme.Accent = color
+	Theme.AccentDark = Darken(color, 0.25)
+	Theme.AccentSoft = LerpColor(Theme.Element, color, 0.16)
+
+	ApplyTheme()
+end
+
+--// Utility
+local function Create(className, props, children)
+	local object = Instance.new(className)
+
+	for prop, value in pairs(props or {}) do
+		object[prop] = value
+	end
+
+	for _, child in ipairs(children or {}) do
+		child.Parent = object
+	end
+
+	return object
+end
+
+local function Corner(radius)
+	return Create("UICorner", {
+		CornerRadius = UDim.new(0, radius or 6)
+	})
+end
+
+local function Stroke(color, thickness, transparency)
+	return Create("UIStroke", {
+		Color = color or Theme.Stroke,
+		Thickness = thickness or 1,
+		Transparency = transparency or 0
+	})
+end
+
+local function Tween(object, time, props)
+	local tween = TweenService:Create(
+		object,
+		TweenInfo.new(time or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		props
+	)
+
+	tween:Play()
+	return tween
+end
+
+local function SafeCallback(callback, ...)
+	if typeof(callback) ~= "function" then
+		return
+	end
+
+	local success, err = pcall(callback, ...)
+	if not success then
+		warn("[dark_UI callback error]:", err)
+	end
+end
+
+local function GetParent()
+	local success = pcall(function()
+		local test = Instance.new("Folder")
+		test.Name = "dark_UI_Test"
+		test.Parent = CoreGui
+		test:Destroy()
+	end)
+
+	if success then
+		return CoreGui
+	end
+
+	return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local function DestroyOldUI()
+	pcall(function()
+		for _, v in ipairs(CoreGui:GetChildren()) do
+			if v.Name == "dark_UI" then
+				v:Destroy()
+			end
+		end
+	end)
+
+	pcall(function()
+		local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+		if playerGui then
+			for _, v in ipairs(playerGui:GetChildren()) do
+				if v.Name == "dark_UI" then
+					v:Destroy()
+				end
+			end
+		end
+	end)
+end
+
+function Library:Create(config)
+	config = config or {}
+
+	DestroyOldUI()
+
+	local windowName = config.Name or "dark_UI"
+	local toggleKey = config.ToggleKey or Enum.KeyCode.RightShift
+	local startupSound = config.StartupSound or {}
+
+	if config.Theme and ThemePresets[config.Theme] then
+		SetTheme(config.Theme)
+	end
+
+	if typeof(config.Accent) == "Color3" then
+		SetAccent(config.Accent)
+	end
+
+	local UIParent = GetParent()
+
+	local dark_UI = Create("ScreenGui", {
+		Name = "dark_UI",
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = 999999,
+		Parent = UIParent,
+	})
+
+	local windowRoot = Create("Frame", {
+		Name = "windowRoot",
+		BackgroundTransparency = 1,
+		ClipsDescendants = false,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(488, 299),
+		ZIndex = 10,
+		Parent = dark_UI,
+	})
+
+	--// v1.0.0 shadow
+	local shadow = Create("ImageLabel", {
+		Name = "shadow",
+		Image = "rbxassetid://297774371",
+		ImageColor3 = Color3.fromRGB(15, 15, 15),
+		ImageTransparency = 0.3,
+		SliceCenter = Rect.new(20, 20, 280, 280),
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, 41, 1, 32),
+		ZIndex = 9,
+		Parent = windowRoot,
+	})
+
+	local main = Create("Frame", {
+		Name = "main",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BorderSizePixel = 0,
+		ZIndex = 11,
+		Parent = windowRoot,
+	}, {
+		Corner(8),
+		Stroke(Theme.Stroke, 1, 0.15),
+	})
+
+	Bind(main, "BackgroundColor3", "Main")
+	Bind(main:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+	local topbar = Create("Frame", {
+		Name = "topbar",
+		Size = UDim2.new(1, 0, 0, 48),
+		BorderSizePixel = 0,
+		ZIndex = 12,
+		Parent = main,
+	}, {
+		Corner(8),
+	})
+
+	Bind(topbar, "BackgroundColor3", "Topbar")
+
+	local topbarBottomFix = Create("Frame", {
+		Name = "topbarBottomFix",
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 1, -8),
+		Size = UDim2.new(1, 0, 0, 8),
+		ZIndex = 12,
+		Parent = topbar,
+	})
+
+	Bind(topbarBottomFix, "BackgroundColor3", "Topbar")
+
+	local title = Create("TextLabel", {
+		Name = "title",
+		Font = Enum.Font.GothamMedium,
+		Text = windowName,
+		TextSize = 18,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(18, 0),
+		Size = UDim2.new(1, -185, 1, 0),
+		ZIndex = 13,
+		Parent = topbar,
+	})
+
+	Bind(title, "TextColor3", "Text")
+
+	local keyButton = Create("TextButton", {
+		Name = "keyButton",
+		Font = Enum.Font.GothamMedium,
+		Text = toggleKey.Name,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		AutoButtonColor = false,
+		Position = UDim2.new(1, -145, 0.5, -12),
+		Size = UDim2.fromOffset(98, 24),
+		ZIndex = 13,
+		Parent = topbar,
+	}, {
+		Corner(5),
+		Stroke(Theme.Stroke, 1, 0.25),
+	})
+
+	Bind(keyButton, "BackgroundColor3", "Element")
+	Bind(keyButton, "TextColor3", "SubText")
+	Bind(keyButton:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+	local settingsButton = Create("TextButton", {
+		Name = "settingsButton",
+		Font = Enum.Font.GothamBold,
+		Text = "⚙",
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		AutoButtonColor = false,
+		Position = UDim2.new(1, -38, 0.5, -12),
+		Size = UDim2.fromOffset(24, 24),
+		ZIndex = 13,
+		Parent = topbar,
+	}, {
+		Corner(5),
+		Stroke(Theme.Stroke, 1, 0.25),
+	})
+
+	Bind(settingsButton, "BackgroundColor3", "Element")
+	Bind(settingsButton, "TextColor3", "Accent")
+	Bind(settingsButton:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+	local tabContainer = Create("Frame", {
+		Name = "tabContainer",
+		Position = UDim2.fromOffset(16, 62),
+		Size = UDim2.fromOffset(456, 32),
+		ZIndex = 12,
+		Parent = main,
+	}, {
+		Corner(6),
+
+		Create("UIPadding", {
+			PaddingLeft = UDim.new(0, 7),
+			PaddingRight = UDim.new(0, 7),
+			PaddingTop = UDim.new(0, 4),
+		}),
+
+		Create("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 8),
+		}),
+	})
+
+	Bind(tabContainer, "BackgroundColor3", "Container")
+
+	local pageContainer = Create("Frame", {
+		Name = "pageContainer",
+		Position = UDim2.fromOffset(16, 108),
+		Size = UDim2.fromOffset(456, 175),
+		ZIndex = 12,
+		Parent = main,
+	}, {
+		Corner(6),
+	})
+
+	Bind(pageContainer, "BackgroundColor3", "Container")
+
+	local settingsPanel = Create("Frame", {
+		Name = "settingsPanel",
+		Visible = false,
+		Position = UDim2.fromOffset(255, 54),
+		Size = UDim2.fromOffset(215, 220),
+		ZIndex = 50,
+		Parent = main,
+	}, {
+		Corner(8),
+		Stroke(Theme.Stroke, 1, 0.15),
+	})
+
+	Bind(settingsPanel, "BackgroundColor3", "Container")
+	Bind(settingsPanel:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+	local settingsTitle = Create("TextLabel", {
+		Font = Enum.Font.GothamMedium,
+		Text = "Settings",
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 8),
+		Size = UDim2.new(1, -24, 0, 20),
+		ZIndex = 51,
+		Parent = settingsPanel,
+	})
+
+	Bind(settingsTitle, "TextColor3", "Text")
+
+	local function MakeSettingsButton(text, pos, size, callback)
+		local button = Create("TextButton", {
+			Font = Enum.Font.GothamMedium,
+			Text = text,
+			TextSize = 12,
+			AutoButtonColor = false,
+			Position = pos,
+			Size = size,
+			ZIndex = 51,
+			Parent = settingsPanel,
+		}, {
+			Corner(5),
+			Stroke(Theme.Stroke, 1, 0.35),
+		})
+
+		Bind(button, "BackgroundColor3", "Element")
+		Bind(button, "TextColor3", "SubText")
+		Bind(button:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+		button.MouseEnter:Connect(function()
+			Tween(button, 0.12, {
+				BackgroundColor3 = Theme.ElementHover,
+				TextColor3 = Theme.Text,
+			})
+		end)
+
+		button.MouseLeave:Connect(function()
+			Tween(button, 0.12, {
+				BackgroundColor3 = Theme.Element,
+				TextColor3 = Theme.SubText,
+			})
+		end)
+
+		button.MouseButton1Click:Connect(callback)
+
+		return button
+	end
+
+	local themeLabel = Create("TextLabel", {
+		Font = Enum.Font.Gotham,
+		Text = "Theme",
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 38),
+		Size = UDim2.new(1, -24, 0, 16),
+		ZIndex = 51,
+		Parent = settingsPanel,
+	})
+
+	Bind(themeLabel, "TextColor3", "SubText")
+
+	local themeButtons = {}
+
+	local function UpdateThemeButtonVisuals()
+		for themeName, button in pairs(themeButtons) do
+			if themeName == CurrentTheme then
+				button.BackgroundColor3 = Theme.AccentSoft
+				button.TextColor3 = Theme.Text
+			else
+				button.BackgroundColor3 = Theme.Element
+				button.TextColor3 = Theme.SubText
+			end
+		end
+	end
+
+	themeButtons.Dark = MakeSettingsButton("Dark", UDim2.fromOffset(12, 58), UDim2.fromOffset(58, 24), function()
+		SetTheme("Dark")
+		UpdateThemeButtonVisuals()
+	end)
+
+	themeButtons.Light = MakeSettingsButton("Light", UDim2.fromOffset(78, 58), UDim2.fromOffset(58, 24), function()
+		SetTheme("Light")
+		UpdateThemeButtonVisuals()
+	end)
+
+	themeButtons.Midnight = MakeSettingsButton("Midnight", UDim2.fromOffset(144, 58), UDim2.fromOffset(58, 24), function()
+		SetTheme("Midnight")
+		UpdateThemeButtonVisuals()
+	end)
+
+	local accentLabel = Create("TextLabel", {
+		Font = Enum.Font.Gotham,
+		Text = "Accent RGB",
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 93),
+		Size = UDim2.new(1, -24, 0, 16),
+		ZIndex = 51,
+		Parent = settingsPanel,
+	})
+
+	Bind(accentLabel, "TextColor3", "SubText")
+
+	local function MakeRGBBox(name, x, default)
+		local box = Create("TextBox", {
+			Name = name,
+			Font = Enum.Font.Gotham,
+			Text = tostring(default),
+			PlaceholderText = name,
+			TextSize = 12,
+			ClearTextOnFocus = false,
+			Position = UDim2.fromOffset(x, 113),
+			Size = UDim2.fromOffset(44, 24),
+			ZIndex = 51,
+			Parent = settingsPanel,
+		}, {
+			Corner(5),
+			Stroke(Theme.Stroke, 1, 0.35),
+		})
+
+		Bind(box, "BackgroundColor3", "Element")
+		Bind(box, "TextColor3", "Text")
+		Bind(box:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+		return box
+	end
+
+	local rBox = MakeRGBBox("R", 12, 255)
+	local gBox = MakeRGBBox("G", 62, 255)
+	local bBox = MakeRGBBox("B", 112, 255)
+
+	local applyAccent = MakeSettingsButton("Apply", UDim2.fromOffset(162, 113), UDim2.fromOffset(40, 24), function()
+		local r = math.clamp(tonumber(rBox.Text) or 255, 0, 255)
+		local g = math.clamp(tonumber(gBox.Text) or 255, 0, 255)
+		local b = math.clamp(tonumber(bBox.Text) or 255, 0, 255)
+
+		rBox.Text = tostring(r)
+		gBox.Text = tostring(g)
+		bBox.Text = tostring(b)
+
+		SetAccent(Color3.fromRGB(r, g, b))
+		UpdateThemeButtonVisuals()
+	end)
+
+	local presetLabel = Create("TextLabel", {
+		Font = Enum.Font.Gotham,
+		Text = "Presets",
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 149),
+		Size = UDim2.new(1, -24, 0, 16),
+		ZIndex = 51,
+		Parent = settingsPanel,
+	})
+
+	Bind(presetLabel, "TextColor3", "SubText")
+
+	local presets = {
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(32, 202, 106),
+		Color3.fromRGB(80, 160, 255),
+		Color3.fromRGB(255, 90, 90),
+		Color3.fromRGB(180, 110, 255),
+		Color3.fromRGB(255, 190, 80),
+	}
+
+	for index, color in ipairs(presets) do
+		local preset = Create("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundColor3 = color,
+			Position = UDim2.fromOffset(12 + ((index - 1) * 32), 170),
+			Size = UDim2.fromOffset(24, 24),
+			ZIndex = 51,
+			Parent = settingsPanel,
+		}, {
+			Corner(5),
+			Stroke(Color3.fromRGB(80, 80, 80), 1, 0.2),
+		})
+
+		preset.MouseButton1Click:Connect(function()
+			local r = math.floor(color.R * 255)
+			local g = math.floor(color.G * 255)
+			local b = math.floor(color.B * 255)
+
+			rBox.Text = tostring(r)
+			gBox.Text = tostring(g)
+			bBox.Text = tostring(b)
+
+			SetAccent(color)
+			UpdateThemeButtonVisuals()
+		end)
+	end
+
+	UpdateThemeButtonVisuals()
+
+	settingsButton.MouseButton1Click:Connect(function()
+		settingsPanel.Visible = not settingsPanel.Visible
+	end)
+
+	settingsButton.MouseEnter:Connect(function()
+		Tween(settingsButton, 0.12, {
+			BackgroundColor3 = Theme.ElementHover,
+		})
+	end)
+
+	settingsButton.MouseLeave:Connect(function()
+		Tween(settingsButton, 0.12, {
+			BackgroundColor3 = Theme.Element,
+		})
+	end)
+
+	local tabs = {}
+	local selectedTab = nil
+	local visible = true
+	local waitingForKey = false
+
+	local function SetVisible(state)
+		visible = state
+		windowRoot.Visible = state
+	end
+
+	local function SelectTab(tabData)
+		selectedTab = tabData
+
+		for _, data in ipairs(tabs) do
+			data.Page.Visible = false
+
+			Tween(data.Button, 0.18, {
+				TextTransparency = 0.45,
+				TextColor3 = Theme.SubText,
+			})
+		end
+
+		tabData.Page.Visible = true
+
+		Tween(tabData.Button, 0.18, {
+			TextTransparency = 0,
+			TextColor3 = Theme.Text,
+		})
+	end
+
+	keyButton.MouseEnter:Connect(function()
+		Tween(keyButton, 0.15, {
+			BackgroundColor3 = Theme.ElementHover,
+			TextColor3 = Theme.Text,
+		})
+	end)
+
+	keyButton.MouseLeave:Connect(function()
+		Tween(keyButton, 0.15, {
+			BackgroundColor3 = Theme.Element,
+			TextColor3 = Theme.SubText,
+		})
+	end)
+
+	keyButton.MouseButton1Click:Connect(function()
+		waitingForKey = true
+		keyButton.Text = "..."
+
+		Tween(keyButton, 0.15, {
+			TextColor3 = Theme.Accent,
+			BackgroundColor3 = Theme.AccentSoft,
+		})
+	end)
+
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if UserInputService:GetFocusedTextBox() then
+			return
+		end
+
+		if waitingForKey then
+			if input.UserInputType == Enum.UserInputType.Keyboard then
+				if input.KeyCode == Enum.KeyCode.Escape then
+					waitingForKey = false
+					keyButton.Text = toggleKey.Name
+					return
+				end
+
+				if input.KeyCode ~= Enum.KeyCode.Unknown then
+					toggleKey = input.KeyCode
+					waitingForKey = false
+					keyButton.Text = toggleKey.Name
+					return
+				end
+			end
+
+			return
+		end
+
+		if gameProcessed then
+			return
+		end
+
+		if input.KeyCode == toggleKey then
+			SetVisible(not visible)
+		end
+	end)
+
+	--// Dragging
+	do
+		local dragging = false
+		local dragStart
+		local startPosition
+
+		topbar.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+
+			if input.Position.X > topbar.AbsolutePosition.X + topbar.AbsoluteSize.X - 160 then
+				return
+			end
+
+			dragging = true
+			dragStart = input.Position
+			startPosition = windowRoot.Position
+		end)
+
+		UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				dragging = false
+			end
+		end)
+
+		UserInputService.InputChanged:Connect(function(input)
+			if not dragging then
+				return
+			end
+
+			if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+				return
+			end
+
+			local delta = input.Position - dragStart
+
+			windowRoot.Position = UDim2.new(
+				startPosition.X.Scale,
+				startPosition.X.Offset + delta.X,
+				startPosition.Y.Scale,
+				startPosition.Y.Offset + delta.Y
+			)
+		end)
+	end
+
+	if startupSound.Toggle and startupSound.SoundID then
+		task.spawn(function()
+			local soundId = tostring(startupSound.SoundID)
+
+			if not soundId:find("rbxassetid://") then
+				soundId = "rbxassetid://" .. soundId
+			end
+
+			local sound = Create("Sound", {
+				Name = "Startup Sound",
+				SoundId = soundId,
+				Volume = startupSound.Volume or 1,
+				TimePosition = startupSound.TimePosition or 0,
+				Parent = SoundService,
+			})
+
+			sound:Play()
+			sound.Ended:Wait()
+			sound:Destroy()
+		end)
+	end
+
+	local WindowHandler = {}
+
+	function WindowHandler:Exit()
+		dark_UI:Destroy()
+	end
+
+	function WindowHandler:SetVisible(state)
+		SetVisible(state)
+	end
+
+	function WindowHandler:Toggle()
+		SetVisible(not visible)
+	end
+
+	function WindowHandler:SetToggleKey(keyCode)
+		if typeof(keyCode) == "EnumItem" and keyCode.EnumType == Enum.KeyCode then
+			toggleKey = keyCode
+			keyButton.Text = toggleKey.Name
+		end
+	end
+
+	function WindowHandler:GetToggleKey()
+		return toggleKey
+	end
+
+	function WindowHandler:SetTheme(themeName)
+		SetTheme(themeName)
+		UpdateThemeButtonVisuals()
+	end
+
+	function WindowHandler:SetAccent(color)
+		if typeof(color) == "Color3" then
+			SetAccent(color)
+			UpdateThemeButtonVisuals()
+		end
+	end
+
+	function WindowHandler:Tab(tabName)
+		tabName = tostring(tabName or "Tab")
+
+		local tabButton = Create("TextButton", {
+			Name = tabName,
+			Font = Enum.Font.GothamMedium,
+			Text = tabName,
+			TextSize = 13,
+			TextTransparency = 0.45,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(10, 24),
+			AutoButtonColor = false,
+			ZIndex = 13,
+			Parent = tabContainer,
+		})
+
+		Bind(tabButton, "TextColor3", "SubText")
+
+		local page = Create("Frame", {
+			Name = tabName .. "_Page",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Visible = false,
+			ZIndex = 13,
+			Parent = pageContainer,
+		})
+
+		local holder = Create("ScrollingFrame", {
+			Name = "holder",
+			Active = true,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 2,
+			ScrollingDirection = Enum.ScrollingDirection.Y,
+			CanvasSize = UDim2.fromOffset(0, 0),
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 14,
+			Parent = page,
+		})
+
+		Bind(holder, "ScrollBarImageColor3", "Scroll")
+
+		Create("UIPadding", {
+			PaddingLeft = UDim.new(0, 7),
+			PaddingRight = UDim.new(0, 7),
+			PaddingTop = UDim.new(0, 8),
+			PaddingBottom = UDim.new(0, 8),
+			Parent = holder,
+		})
+
+		local layout = Create("UIListLayout", {
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 5),
+			Parent = holder,
+		})
+
+		layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+			holder.CanvasSize = UDim2.fromOffset(0, layout.AbsoluteContentSize.Y + 18)
+		end)
+
+		local tabData = {
+			Button = tabButton,
+			Page = page,
+		}
+
+		table.insert(tabs, tabData)
+
+		tabButton.MouseButton1Click:Connect(function()
+			SelectTab(tabData)
+		end)
+
+		if not selectedTab then
+			SelectTab(tabData)
+		end
+
+		local Elements = {}
+
+		local function BaseElement(className, height)
+			local element = Create(className or "TextButton", {
+				Size = UDim2.new(1, -14, 0, height or 32),
+				Text = "",
+				AutoButtonColor = false,
+				ZIndex = 15,
+				Parent = holder,
+			}, {
+				Corner(6),
+				Stroke(Theme.Stroke, 1, 0.55),
+			})
+
+			Bind(element, "BackgroundColor3", "Element")
+			Bind(element:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+			return element
+		end
+
+		function Elements:Label(text)
+			local label = Create("Frame", {
+				Name = "label",
+				BackgroundTransparency = 0.25,
+				Size = UDim2.new(1, -14, 0, 26),
+				ZIndex = 15,
+				Parent = holder,
+			}, {
+				Corner(5),
+				Stroke(Theme.Stroke, 1, 0.55),
+			})
+
+			Bind(label, "BackgroundColor3", "Container")
+			Bind(label:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+			local accentLine = Create("Frame", {
+				Name = "accentLine",
+				Position = UDim2.fromOffset(8, 7),
+				Size = UDim2.fromOffset(2, 12),
+				ZIndex = 16,
+				Parent = label,
+			}, {
+				Corner(2),
+			})
+
+			Bind(accentLine, "BackgroundColor3", "Accent")
+
+			local textLabel = Create("TextLabel", {
+				Name = "text",
+				Font = Enum.Font.Gotham,
+				Text = tostring(text or "Label"),
+				TextSize = 12,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(18, 0),
+				Size = UDim2.new(1, -26, 1, 0),
+				ZIndex = 16,
+				Parent = label,
+			})
+
+			Bind(textLabel, "TextColor3", "SubText")
+
+			return {
+				Instance = label,
+
+				Set = function(_, newText)
+					textLabel.Text = tostring(newText)
+				end,
+			}
+		end
+
+		function Elements:Button(text, callback)
+			local button = BaseElement("TextButton", 34)
+
+			local side = Create("Frame", {
+				Name = "side",
+				Position = UDim2.fromOffset(0, 8),
+				Size = UDim2.fromOffset(2, 18),
+				ZIndex = 16,
+				Parent = button,
+			}, {
+				Corner(2),
+			})
+
+			Bind(side, "BackgroundColor3", "Accent")
+
+			local label = Create("TextLabel", {
+				Name = "text",
+				Font = Enum.Font.GothamMedium,
+				Text = tostring(text or "Button"),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(12, 0),
+				Size = UDim2.new(1, -45, 1, 0),
+				ZIndex = 16,
+				Parent = button,
+			})
+
+			Bind(label, "TextColor3", "Text")
+
+			local arrow = Create("TextLabel", {
+				Name = "arrow",
+				Font = Enum.Font.GothamBold,
+				Text = "›",
+				TextSize = 17,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				BackgroundTransparency = 1,
+				Position = UDim2.new(1, -31, 0, 0),
+				Size = UDim2.fromOffset(22, 34),
+				ZIndex = 16,
+				Parent = button,
+			})
+
+			Bind(arrow, "TextColor3", "SubText")
+
+			button.MouseEnter:Connect(function()
+				Tween(button, 0.14, {
+					BackgroundColor3 = Theme.ElementHover,
+				})
+
+				Tween(arrow, 0.14, {
+					TextColor3 = Theme.Accent,
+				})
+			end)
+
+			button.MouseLeave:Connect(function()
+				Tween(button, 0.14, {
+					BackgroundColor3 = Theme.Element,
+				})
+
+				Tween(arrow, 0.14, {
+					TextColor3 = Theme.SubText,
+				})
+			end)
+
+			button.MouseButton1Down:Connect(function()
+				Tween(button, 0.08, {
+					BackgroundColor3 = Theme.ElementDown,
+				})
+			end)
+
+			button.MouseButton1Up:Connect(function()
+				Tween(button, 0.12, {
+					BackgroundColor3 = Theme.ElementHover,
+				})
+			end)
+
+			button.MouseButton1Click:Connect(function()
+				SafeCallback(callback)
+			end)
+
+			return button
+		end
+
+		function Elements:Toggle(text, default, callback)
+			if typeof(default) == "function" then
+				callback = default
+				default = false
+			end
+
+			local toggled = default == true
+			local toggle = BaseElement("TextButton", 32)
+
+			local label = Create("TextLabel", {
+				Name = "text",
+				Font = Enum.Font.Gotham,
+				Text = tostring(text or "Toggle"),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(10, 0),
+				Size = UDim2.new(1, -60, 1, 0),
+				ZIndex = 16,
+				Parent = toggle,
+			})
+
+			Bind(label, "TextColor3", "Text")
+
+			local box = Create("Frame", {
+				Name = "box",
+				Position = UDim2.new(1, -29, 0.5, -9),
+				Size = UDim2.fromOffset(18, 18),
+				ZIndex = 16,
+				Parent = toggle,
+			}, {
+				Corner(4),
+				Stroke(Theme.Stroke, 1, 0),
+			})
+
+			Bind(box:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+			local function Update(state, fireCallback)
+				toggled = state == true
+
+				Tween(box, 0.18, {
+					BackgroundColor3 = toggled and Theme.AccentDark or Theme.ElementDown,
+				})
+
+				Tween(box:FindFirstChildOfClass("UIStroke"), 0.18, {
+					Color = toggled and Theme.Accent or Theme.Stroke,
+				})
+
+				if fireCallback then
+					SafeCallback(callback, toggled)
+				end
+			end
+
+			toggle.MouseEnter:Connect(function()
+				Tween(toggle, 0.18, {
+					BackgroundColor3 = Theme.ElementHover,
+				})
+			end)
+
+			toggle.MouseLeave:Connect(function()
+				Tween(toggle, 0.18, {
+					BackgroundColor3 = Theme.Element,
+				})
+			end)
+
+			toggle.MouseButton1Click:Connect(function()
+				Update(not toggled, true)
+			end)
+
+			Update(toggled, false)
+
+			return {
+				Instance = toggle,
+
+				Set = function(_, state)
+					Update(state == true, true)
+				end,
+
+				Get = function()
+					return toggled
+				end,
+			}
+		end
+
+		function Elements:Slider(text, default, min, max, callback)
+			text = text or "Slider"
+			min = tonumber(min) or 0
+			max = tonumber(max) or 100
+			default = math.clamp(tonumber(default) or min, min, max)
+
+			local value = default
+			local dragging = false
+
+			local slider = BaseElement("TextButton", 32)
+
+			local label = Create("TextLabel", {
+				Name = "text",
+				Font = Enum.Font.Gotham,
+				Text = tostring(text),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(10, 0),
+				Size = UDim2.new(1, -190, 1, 0),
+				ZIndex = 16,
+				Parent = slider,
+			})
+
+			Bind(label, "TextColor3", "Text")
+
+			local valueLabel = Create("TextLabel", {
+				Name = "value",
+				Font = Enum.Font.Gotham,
+				Text = tostring(value),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Right,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				BackgroundTransparency = 1,
+				Position = UDim2.new(1, -174, 0, 0),
+				Size = UDim2.fromOffset(48, 32),
+				ZIndex = 16,
+				Parent = slider,
+			})
+
+			Bind(valueLabel, "TextColor3", "SubText")
+
+			local track = Create("Frame", {
+				Name = "track",
+				Position = UDim2.new(1, -116, 0.5, -4),
+				Size = UDim2.fromOffset(102, 8),
+				ZIndex = 16,
+				Parent = slider,
+			}, {
+				Corner(4),
+			})
+
+			Bind(track, "BackgroundColor3", "Container")
+
+			local fill = Create("Frame", {
+				Name = "fill",
+				Size = UDim2.fromScale(0, 1),
+				ZIndex = 17,
+				Parent = track,
+			}, {
+				Corner(4),
+			})
+
+			Bind(fill, "BackgroundColor3", "Accent")
+
+			local function SetValue(newValue, fireCallback)
+				newValue = math.clamp(math.floor(newValue), min, max)
+
+				value = newValue
+				valueLabel.Text = tostring(value)
+
+				local percent = 0
+				if max ~= min then
+					percent = (value - min) / (max - min)
+				end
+
+				Tween(fill, 0.08, {
+					Size = UDim2.fromScale(percent, 1),
+				})
+
+				if fireCallback then
+					SafeCallback(callback, value)
+				end
+			end
+
+			local function UpdateFromMouse()
+				local mouseX = UserInputService:GetMouseLocation().X
+
+				local percent = math.clamp(
+					(mouseX - track.AbsolutePosition.X) / track.AbsoluteSize.X,
+					0,
+					1
+				)
+
+				SetValue(min + ((max - min) * percent), true)
+			end
+
+			slider.MouseEnter:Connect(function()
+				Tween(slider, 0.18, {
+					BackgroundColor3 = Theme.ElementHover,
+				})
+			end)
+
+			slider.MouseLeave:Connect(function()
+				if not dragging then
+					Tween(slider, 0.18, {
+						BackgroundColor3 = Theme.Element,
+					})
+				end
+			end)
+
+			slider.MouseButton1Down:Connect(function()
+				dragging = true
+				Tween(slider, 0.1, {
+					BackgroundColor3 = Theme.ElementDown,
+				})
+				UpdateFromMouse()
+			end)
+
+			UserInputService.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					dragging = false
+
+					Tween(slider, 0.18, {
+						BackgroundColor3 = Theme.Element,
+					})
+				end
+			end)
+
+			UserInputService.InputChanged:Connect(function(input)
+				if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+					UpdateFromMouse()
+				end
+			end)
+
+			SetValue(default, false)
+
+			return {
+				Instance = slider,
+
+				Set = function(_, newValue)
+					SetValue(newValue, true)
+				end,
+
+				Get = function()
+					return value
+				end,
+			}
+		end
+
+		function Elements:Textbox(text, callback)
+			local textboxFrame = BaseElement("Frame", 32)
+
+			local label = Create("TextLabel", {
+				Name = "text",
+				Font = Enum.Font.Gotham,
+				Text = tostring(text or "Textbox"),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(10, 0),
+				Size = UDim2.new(1, -130, 1, 0),
+				ZIndex = 16,
+				Parent = textboxFrame,
+			})
+
+			Bind(label, "TextColor3", "Text")
+
+			local textBox = Create("TextBox", {
+				Name = "input",
+				Font = Enum.Font.Gotham,
+				Text = "",
+				PlaceholderText = "...",
+				TextSize = 12,
+				ClearTextOnFocus = false,
+				Position = UDim2.new(1, -96, 0.5, -10),
+				Size = UDim2.fromOffset(82, 20),
+				ZIndex = 16,
+				Parent = textboxFrame,
+			}, {
+				Corner(5),
+				Stroke(Theme.Stroke, 1, 0.5),
+			})
+
+			Bind(textBox, "BackgroundColor3", "Container")
+			Bind(textBox, "TextColor3", "Text")
+			Bind(textBox, "PlaceholderColor3", "SubText")
+			Bind(textBox:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+			textboxFrame.MouseEnter:Connect(function()
+				Tween(textboxFrame, 0.18, {
+					BackgroundColor3 = Theme.ElementHover,
+				})
+			end)
+
+			textboxFrame.MouseLeave:Connect(function()
+				Tween(textboxFrame, 0.18, {
+					BackgroundColor3 = Theme.Element,
+				})
+			end)
+
+			textBox.FocusLost:Connect(function(enterPressed)
+				SafeCallback(callback, textBox.Text, enterPressed)
+			end)
+
+			return textBox
+		end
+
+		function Elements:Dropdown(text, options, default, callback)
+			text = text or "Dropdown"
+			options = options or {}
+
+			local multiSelect = false
+			local searchEnabled = false
+
+			if typeof(options) == "table" and options.Options then
+				local dropConfig = options
+
+				options = dropConfig.Options or {}
+				default = dropConfig.Default
+				callback = dropConfig.Callback
+				multiSelect = dropConfig.Multi == true
+				searchEnabled = dropConfig.Searchbar == true
+			else
+				multiSelect = typeof(default) == "table"
+
+				if typeof(default) == "function" then
+					callback = default
+					default = nil
+					multiSelect = false
+				end
+			end
+
+			local opened = false
+			local optionButtons = {}
+			local selected
+
+			if multiSelect then
+				selected = {}
+
+				if typeof(default) == "table" then
+					for _, value in ipairs(default) do
+						selected[value] = true
+					end
+				end
+			else
+				selected = default or options[1] or "None"
+			end
+
+			local dropdown = Create("Frame", {
+				Name = "dropdown",
+				Size = UDim2.new(1, -14, 0, 36),
+				ClipsDescendants = true,
+				ZIndex = 15,
+				Parent = holder,
+			}, {
+				Corner(7),
+				Stroke(Theme.Stroke, 1, 0.25),
+			})
+
+			Bind(dropdown, "BackgroundColor3", "Container")
+			Bind(dropdown:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+			local header = Create("TextButton", {
+				Name = "header",
+				Size = UDim2.new(1, 0, 0, 36),
+				Text = "",
+				AutoButtonColor = false,
+				ZIndex = 16,
+				Parent = dropdown,
+			}, {
+				Corner(7),
+			})
+
+			Bind(header, "BackgroundColor3", "Element")
+
+			local leftAccent = Create("Frame", {
+				Name = "leftAccent",
+				Position = UDim2.fromOffset(0, 8),
+				Size = UDim2.fromOffset(2, 20),
+				ZIndex = 17,
+				Parent = header,
+			}, {
+				Corner(2),
+			})
+
+			Bind(leftAccent, "BackgroundColor3", "Accent")
+
+			local label = Create("TextLabel", {
+				Name = "text",
+				Font = Enum.Font.GothamMedium,
+				Text = tostring(text),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(12, 0),
+				Size = UDim2.new(1, -190, 1, 0),
+				ZIndex = 17,
+				Parent = header,
+			})
+
+			Bind(label, "TextColor3", "Text")
+
+			local selectedBox = Create("Frame", {
+				Name = "selectedBox",
+				Position = UDim2.new(1, -170, 0.5, -11),
+				Size = UDim2.fromOffset(135, 22),
+				ZIndex = 17,
+				Parent = header,
+			}, {
+				Corner(5),
+				Stroke(Theme.Stroke, 1, 0.35),
+			})
+
+			Bind(selectedBox, "BackgroundColor3", "Container")
+			Bind(selectedBox:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+			local selectedLabel = Create("TextLabel", {
+				Name = "selected",
+				Font = Enum.Font.Gotham,
+				Text = "",
+				TextSize = 12,
+				TextXAlignment = Enum.TextXAlignment.Right,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(6, 0),
+				Size = UDim2.new(1, -12, 1, 0),
+				ZIndex = 18,
+				Parent = selectedBox,
+			})
+
+			Bind(selectedLabel, "TextColor3", "SubText")
+
+			local arrow = Create("TextLabel", {
+				Name = "arrow",
+				Font = Enum.Font.GothamBold,
+				Text = "⌄",
+				TextSize = 16,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				BackgroundTransparency = 1,
+				Position = UDim2.new(1, -30, 0, 0),
+				Size = UDim2.fromOffset(24, 36),
+				ZIndex = 18,
+				Parent = header,
+			})
+
+			Bind(arrow, "TextColor3", "Accent")
+
+			local searchBox
+			local searchHeight = searchEnabled and 31 or 0
+
+			if searchEnabled then
+				searchBox = Create("TextBox", {
+					Name = "searchBox",
+					Font = Enum.Font.Gotham,
+					Text = "",
+					PlaceholderText = "Search...",
+					TextSize = 12,
+					ClearTextOnFocus = false,
+					Position = UDim2.fromOffset(6, 42),
+					Size = UDim2.new(1, -12, 0, 26),
+					ZIndex = 17,
+					Parent = dropdown,
+				}, {
+					Corner(5),
+					Stroke(Theme.Stroke, 1, 0.35),
+				})
+
+				Bind(searchBox, "BackgroundColor3", "Element")
+				Bind(searchBox, "TextColor3", "Text")
+				Bind(searchBox, "PlaceholderColor3", "SubText")
+				Bind(searchBox:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+			end
+
+			local optionHolder = Create("Frame", {
+				Name = "optionHolder",
+				Position = UDim2.fromOffset(6, searchEnabled and 73 or 42),
+				Size = UDim2.new(1, -12, 0, 0),
+				ZIndex = 16,
+				Parent = dropdown,
+			}, {
+				Corner(6),
+				Stroke(Theme.Stroke, 1, 0.35),
+
+				Create("UIPadding", {
+					PaddingLeft = UDim.new(0, 5),
+					PaddingRight = UDim.new(0, 5),
+					PaddingTop = UDim.new(0, 5),
+					PaddingBottom = UDim.new(0, 5),
+				}),
+
+				Create("UIListLayout", {
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, 4),
+				}),
+			})
+
+			Bind(optionHolder, "BackgroundColor3", "Container")
+			Bind(optionHolder:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
+
+			local function OptionExists(option)
+				for _, existing in ipairs(options) do
+					if existing == option then
+						return true
+					end
+				end
+
+				return false
+			end
+
+			local function GetSelectedArray()
+				local list = {}
+
+				for _, option in ipairs(options) do
+					if selected[option] then
+						table.insert(list, option)
+					end
+				end
+
+				return list
+			end
+
+			local function UpdateSelectedLabel()
+				if multiSelect then
+					local list = GetSelectedArray()
+
+					if #list == 0 then
+						selectedLabel.Text = "None"
+					elseif #list == 1 then
+						selectedLabel.Text = tostring(list[1])
+					else
+						selectedLabel.Text = tostring(#list) .. " selected"
+					end
+				else
+					selectedLabel.Text = tostring(selected)
+				end
+			end
+
+			local function FireCallback()
+				if multiSelect then
+					SafeCallback(callback, GetSelectedArray())
+				else
+					SafeCallback(callback, selected)
+				end
+			end
+
+			local function GetVisibleCount()
+				local count = 0
+
+				for _, data in ipairs(optionButtons) do
+					if data.Visible then
+						count += 1
+					end
+				end
+
+				return count
+			end
+
+			local function UpdateHolderSize()
+				local count = GetVisibleCount()
+
+				if count <= 0 then
+					optionHolder.Size = UDim2.new(1, -12, 0, 36)
+					return
+				end
+
+				local optionHeight = count * 28
+				local paddingHeight = math.max(count - 1, 0) * 4
+				local holderPadding = 10
+
+				optionHolder.Size = UDim2.new(1, -12, 0, optionHeight + paddingHeight + holderPadding)
+			end
+
+			local function GetOpenHeight()
+				local visibleCount = GetVisibleCount()
+
+				if visibleCount <= 0 then
+					return 42 + searchHeight + 36
+				end
+
+				local optionHeight = visibleCount * 28
+				local paddingHeight = math.max(visibleCount - 1, 0) * 4
+				local holderPadding = 10
+
+				return 42 + searchHeight + optionHeight + paddingHeight + holderPadding
+			end
+
+			local function SetOpen(state)
+				opened = state == true
+
+				UpdateHolderSize()
+
+				Tween(dropdown, 0.18, {
+					Size = opened and UDim2.new(1, -14, 0, GetOpenHeight()) or UDim2.new(1, -14, 0, 36),
+				})
+
+				Tween(arrow, 0.18, {
+					Rotation = opened and 180 or 0,
+				})
+
+				Tween(header, 0.18, {
+					BackgroundColor3 = opened and Theme.ElementHover or Theme.Element,
+				})
+			end
+
+			local function UpdateOptionVisual(optionButton, option)
+				local check = optionButton:FindFirstChild("check")
+				local optionText = optionButton:FindFirstChild("text")
+
+				local isSelected
+
+				if multiSelect then
+					isSelected = selected[option] == true
+				else
+					isSelected = selected == option
+				end
+
+				if check then
+					check.Visible = isSelected
+				end
+
+				if optionText then
+					optionText.TextColor3 = isSelected and Theme.Text or Theme.SubText
+				end
+
+				Tween(optionButton, 0.12, {
+					BackgroundColor3 = isSelected and Theme.AccentSoft or Theme.Element,
+				})
+			end
+
+			local function RefreshVisuals()
+				for _, data in ipairs(optionButtons) do
+					UpdateOptionVisual(data.Button, data.Option)
+				end
+
+				UpdateSelectedLabel()
+			end
+
+			local function ApplySearchFilter()
+				local query = ""
+
+				if searchBox then
+					query = string.lower(searchBox.Text)
+				end
+
+				for _, data in ipairs(optionButtons) do
+					local optionText = string.lower(tostring(data.Option))
+					local visibleOption = query == "" or string.find(optionText, query, 1, true) ~= nil
+
+					data.Visible = visibleOption
+					data.Button.Visible = visibleOption
+					data.Button.Size = visibleOption and UDim2.new(1, 0, 0, 28) or UDim2.new(1, 0, 0, 0)
+				end
+
+				UpdateHolderSize()
+
+				if opened then
+					Tween(dropdown, 0.12, {
+						Size = UDim2.new(1, -14, 0, GetOpenHeight()),
+					})
+				end
+			end
+
+			local function SetSelected(value, fireCallback)
+				if multiSelect then
+					if typeof(value) == "table" then
+						table.clear(selected)
+
+						for _, item in ipairs(value) do
+							if OptionExists(item) then
+								selected[item] = true
+							end
+						end
+					else
+						if OptionExists(value) then
+							selected[value] = not selected[value]
+						end
+					end
+				else
+					if OptionExists(value) then
+						selected = value
+					else
+						selected = options[1] or "None"
+					end
+
+					--// Important:
+					--// Single dropdown does NOT close here anymore.
+					--// It only closes when the top/header button is clicked.
+				end
+
+				RefreshVisuals()
+
+				if fireCallback then
+					FireCallback()
+				end
+			end
+
+			local function ClearOptions()
+				for _, data in ipairs(optionButtons) do
+					data.Button:Destroy()
+				end
+
+				table.clear(optionButtons)
+			end
+
+			local function AddOption(option)
+				local optionButton = Create("TextButton", {
+					Name = tostring(option),
+					Text = "",
+					AutoButtonColor = false,
+					Size = UDim2.new(1, 0, 0, 28),
+					ZIndex = 18,
+					Parent = optionHolder,
+				}, {
+					Corner(5),
+				})
+
+				Bind(optionButton, "BackgroundColor3", "Element")
+
+				local check = Create("TextLabel", {
+					Name = "check",
+					Font = Enum.Font.GothamBold,
+					Text = "✓",
+					TextSize = 13,
+					TextXAlignment = Enum.TextXAlignment.Center,
+					TextYAlignment = Enum.TextYAlignment.Center,
+					BackgroundTransparency = 1,
+					Position = UDim2.fromOffset(5, 0),
+					Size = UDim2.fromOffset(20, 28),
+					Visible = false,
+					ZIndex = 19,
+					Parent = optionButton,
+				})
+
+				Bind(check, "TextColor3", "Accent")
+
+				local optionText = Create("TextLabel", {
+					Name = "text",
+					Font = Enum.Font.Gotham,
+					Text = tostring(option),
+					TextSize = 12,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextYAlignment = Enum.TextYAlignment.Center,
+					BackgroundTransparency = 1,
+					Position = UDim2.fromOffset(30, 0),
+					Size = UDim2.new(1, -38, 1, 0),
+					ZIndex = 19,
+					Parent = optionButton,
+				})
+
+				Bind(optionText, "TextColor3", "SubText")
+
+				optionButton.MouseEnter:Connect(function()
+					Tween(optionButton, 0.12, {
+						BackgroundColor3 = Theme.ElementHover,
+					})
+				end)
+
+				optionButton.MouseLeave:Connect(function()
+					UpdateOptionVisual(optionButton, option)
+				end)
+
+				optionButton.MouseButton1Click:Connect(function()
+					SetSelected(option, true)
+				end)
+
+				table.insert(optionButtons, {
+					Button = optionButton,
+					Option = option,
+					Visible = true,
+				})
+
+				UpdateOptionVisual(optionButton, option)
+			end
+
+			local function UpdateList(newOptions, newDefault)
+				options = newOptions or {}
+
+				ClearOptions()
+
+				if multiSelect then
+					local oldSelected = selected
+					selected = {}
+
+					if typeof(newDefault) == "table" then
+						for _, item in ipairs(newDefault) do
+							if OptionExists(item) then
+								selected[item] = true
+							end
+						end
+					else
+						for _, option in ipairs(options) do
+							if oldSelected[option] then
+								selected[option] = true
+							end
+						end
+					end
+				else
+					if newDefault ~= nil and OptionExists(newDefault) then
+						selected = newDefault
+					elseif OptionExists(selected) then
+						selected = selected
+					else
+						selected = options[1] or "None"
+					end
+				end
+
+				for _, option in ipairs(options) do
+					AddOption(option)
+				end
+
+				ApplySearchFilter()
+				RefreshVisuals()
+
+				if opened then
+					SetOpen(true)
+				else
+					SetOpen(false)
+				end
+			end
+
+			for _, option in ipairs(options) do
+				AddOption(option)
+			end
+
+			if searchBox then
+				searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+					ApplySearchFilter()
+				end)
+			end
+
+			header.MouseEnter:Connect(function()
+				Tween(header, 0.14, {
+					BackgroundColor3 = Theme.ElementHover,
+				})
+			end)
+
+			header.MouseLeave:Connect(function()
+				Tween(header, 0.14, {
+					BackgroundColor3 = opened and Theme.ElementHover or Theme.Element,
+				})
+			end)
+
+			header.MouseButton1Click:Connect(function()
+				SetOpen(not opened)
+			end)
+
+			ApplySearchFilter()
+			RefreshVisuals()
+
+			return {
+				Instance = dropdown,
+
+				Set = function(_, value)
+					SetSelected(value, true)
+				end,
+
+				Get = function()
+					if multiSelect then
+						return GetSelectedArray()
+					end
+
+					return selected
+				end,
+
+				Open = function()
+					SetOpen(true)
+				end,
+
+				Close = function()
+					SetOpen(false)
+				end,
+
+				Refresh = function(_, newOptions, newDefault)
+					UpdateList(newOptions, newDefault)
+				end,
+
+				UpdateList = function(_, newOptions, newDefault)
+					UpdateList(newOptions, newDefault)
+				end,
+			}
+		end
+
+		return Elements
+	end
+
+	return WindowHandler
+end
+
+return Library
