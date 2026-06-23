@@ -1334,64 +1334,101 @@ function Library:Create(config)
 			}
 		end
 
-		function Elements:Textbox(text, callback)
-			local textboxFrame = BaseElement("Frame", 32)
+		function Elements:Textbox(text, callback, default)
+	default = tostring(default or "")
 
-			local label = Create("TextLabel", {
-				Name = "text",
-				Font = Enum.Font.Gotham,
-				Text = tostring(text or "Textbox"),
-				TextSize = 13,
-				TextXAlignment = Enum.TextXAlignment.Left,
-				TextYAlignment = Enum.TextYAlignment.Center,
-				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(10, 0),
-				Size = UDim2.new(1, -130, 1, 0),
-				ZIndex = 16,
-				Parent = textboxFrame,
+	local textboxFrame = BaseElement("Frame", 32)
+
+	local label = Create("TextLabel", {
+		Name = "text",
+		Font = Enum.Font.Gotham,
+		Text = tostring(text or "Textbox"),
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(10, 0),
+		Size = UDim2.new(1, -130, 1, 0),
+		ZIndex = 16,
+		Parent = textboxFrame,
+	})
+
+	Bind(label, "TextColor3", "Text")
+
+	local textBox = Create("TextBox", {
+		Name = "input",
+		Font = Enum.Font.Gotham,
+		Text = default,
+		PlaceholderText = "...",
+		TextSize = 12,
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.new(1, -96, 0.5, -10),
+		Size = UDim2.fromOffset(82, 20),
+		ZIndex = 16,
+		Parent = textboxFrame,
+	}, {
+		Corner(5),
+		Stroke(Theme.Stroke, 1, 0.5),
+	})
+
+	Bind(textBox, "BackgroundColor3", "Container")
+	Bind(textBox, "TextColor3", "Text")
+	Bind(textBox, "PlaceholderColor3", "SubText")
+
+	local strokeObj = textBox:FindFirstChildOfClass("UIStroke")
+	if strokeObj then
+		Bind(strokeObj, "Color", "Stroke")
+	end
+
+	textboxFrame.MouseEnter:Connect(function()
+		if not textBox:IsFocused() then
+			Tween(textboxFrame, 0.18, {
+				BackgroundColor3 = Theme.ElementHover,
 			})
-
-			Bind(label, "TextColor3", "Text")
-
-			local textBox = Create("TextBox", {
-				Name = "input",
-				Font = Enum.Font.Gotham,
-				Text = "",
-				PlaceholderText = "...",
-				TextSize = 12,
-				ClearTextOnFocus = false,
-				Position = UDim2.new(1, -96, 0.5, -10),
-				Size = UDim2.fromOffset(82, 20),
-				ZIndex = 16,
-				Parent = textboxFrame,
-			}, {
-				Corner(5),
-				Stroke(Theme.Stroke, 1, 0.5),
-			})
-
-			Bind(textBox, "BackgroundColor3", "Container")
-			Bind(textBox, "TextColor3", "Text")
-			Bind(textBox, "PlaceholderColor3", "SubText")
-			Bind(textBox:FindFirstChildOfClass("UIStroke"), "Color", "Stroke")
-
-			textboxFrame.MouseEnter:Connect(function()
-				Tween(textboxFrame, 0.18, {
-					BackgroundColor3 = Theme.ElementHover,
-				})
-			end)
-
-			textboxFrame.MouseLeave:Connect(function()
-				Tween(textboxFrame, 0.18, {
-					BackgroundColor3 = Theme.Element,
-				})
-			end)
-
-			textBox.FocusLost:Connect(function(enterPressed)
-				SafeCallback(callback, textBox.Text, enterPressed)
-			end)
-
-			return textBox
 		end
+	end)
+
+	textboxFrame.MouseLeave:Connect(function()
+		if not textBox:IsFocused() then
+			Tween(textboxFrame, 0.18, {
+				BackgroundColor3 = Theme.Element,
+			})
+		end
+	end)
+
+	textBox.Focused:Connect(function()
+		Tween(textboxFrame, 0.15, {
+			BackgroundColor3 = Theme.ElementHover,
+		})
+	end)
+
+	textBox.FocusLost:Connect(function(enterPressed)
+		Tween(textboxFrame, 0.15, {
+			BackgroundColor3 = Theme.Element,
+		})
+
+		SafeCallback(callback, textBox.Text, enterPressed)
+	end)
+
+	return {
+		Instance = textboxFrame,
+
+		Set = function(_, value)
+			textBox.Text = tostring(value)
+		end,
+
+		Get = function()
+			return textBox.Text
+		end,
+
+		Clear = function()
+			textBox.Text = ""
+		end,
+
+		TextBox = textBox
+	}
+end
 
 		function Elements:Dropdown(text, options, default, callback)
 			text = text or "Dropdown"
